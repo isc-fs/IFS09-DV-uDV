@@ -69,6 +69,12 @@ jobs:
             build/binaries/uDV.bin
             build/binaries/uDV.hex
           if-no-files-found: error
+          # Without this, artifacts keep the 90-day default and pile up.
+          # The IFS08 uDV repo reached 257 live copies of this same
+          # artifact (236 MB) that way and exhausted the org's Actions
+          # storage quota, which then broke artifact upload in an
+          # unrelated repository.
+          retention-days: 14
 
   # ---------------------------------------------------------------------------
   # Parallel CMake build — catches CMakeLists.txt vs Makefile drift.
