@@ -6,3 +6,4 @@ mx.scratch
 microros_agent_ws/*
 .claude/
 stm32_micro_ros_setup/
+.history/
