@@ -74,7 +74,20 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+  /* The CAN bootloader (isc-fs/stm32-can-bootloader, sector 0) jumps here with
+   * IRQs masked (PRIMASK=1): it disables them before relocating VTOR and leaves
+   * the unmasking to the app (bootloader ARCHITECTURE.md "Boot flow", step 6).
+   * Nothing in CubeMX's startup or HAL_Init clears PRIMASK, so every HAL_GetTick
+   * timeout before the scheduler (clock config, peripheral init) would spin
+   * forever on a tick that never advances. Clear any SysTick left pending by the
+   * bootloader (it stops SysTick but can't clear the pending bit), then unmask:
+   * first thing, as the ECU does (IFS08-CE-ECU#70). A no-op on a cold boot.
+   *
+   * VTOR: the bootloader sets SCB->VTOR = 0x08020000 before the jump, and the
+   * app never writes it (USER_VECT_TAB_ADDRESS stays undefined in
+   * system_stm32h7xx.c), the same contract as the ECU. */
+  SCB->ICSR = SCB_ICSR_PENDSTCLR_Msk;
+  __enable_irq();
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/

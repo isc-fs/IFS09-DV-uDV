@@ -31,8 +31,15 @@ CMake generates `build/binaries/compile_commands.json`, which clangd uses (see `
 ### Toolchain
 Requires `arm-none-eabi-gcc`. The CMake toolchain ([cmake/arm-none-eabi.cmake](cmake/arm-none-eabi.cmake)) auto-detects it from common macOS install paths (`/Applications/ArmGNUToolchain/`, `/opt/homebrew/bin/`). Override with `GCC_PATH=<dir>` for Make or `-DTOOLCHAIN_PATH=<dir>` for CMake.
 
-### Flash
-Use STM32CubeProgrammer or OpenOCD with the built `build/binaries/uDV.hex` or `.bin`.
+### Flash (behind the CAN bootloader)
+Every MainLite carries [isc-fs/stm32-can-bootloader](https://github.com/isc-fs/stm32-can-bootloader) in flash sector 0, and the uDV app runs behind it, like the ECU (node 0x1) and the AMS (node 0x2):
+
+- **Flash layout**: app at `0x08020000`, 768 KB (sectors 1–6, [STM32H733XG_FLASH.ld](STM32H733XG_FLASH.ld), mirrored in `uDV.ioc` MMTAppReg6). Sector 0 is the bootloader; sector 7 its NVM, node-id seed and the app-metadata FLASHWORD at `0x080FFFE0`, which the bootloader stamps itself after a verified flash. The app's `.firmware_info` record (GET_FW_INFO, [firmware_info.c](Core/Src/firmware_info.c)) sits at `0x08020400`. [scripts/check_flash_layout.py](scripts/check_flash_layout.py) gates all of it in CI.
+- **Handoff**: the bootloader sets `SCB->VTOR = 0x08020000` and jumps with IRQs masked. `main()` clears a pending SysTick and calls `__enable_irq()` first thing (USER CODE 1); the app never writes VTOR (`USER_VECT_TAB_ADDRESS` stays undefined in `system_stm32h7xx.c`). The bootloader's IWDG (~8 s) runs until the safety task re-periods it.
+- **Flash over CAN**: `cf --bitrate 500000 --node-id 0x3 flash build/binaries/uDV.elf`, on the ACU bus (FDCAN2).
+- **Back into the bootloader**: CAN `0x002` with payload `B0 07 AD 13` on FDCAN2 writes `0xB00710AD` to `RTC->BKP0R` and resets ([bl_entry.h](Core/Inc/bl_entry.h)). Honoured in AS OFF only: a reset fires the EBS and opens the SDC. Before flashing a real board, confirm this path (or the bootloader's 2 s auto-jump window after power-on) gets it back into the bootloader.
+- **Reset cause**: the bootloader latches and clears `RCC->RSR` before the app runs, and after an IWDG or fault reset it stays in the bootloader instead of starting the app. The app's IWDG-reset latch in `main.c` therefore no longer sees an IWDG reset; the board stays in the bootloader with its pins at the fail-safe power-on level.
+- **SWD**: write the `.elf` or `.hex` (they carry their addresses). Never write `uDV.bin` at the programmer's default `0x08000000`: it overwrites the bootloader.
 
 ### Rebuild micro-ROS static library
 Only needed when adding/changing ROS message types:
@@ -93,7 +100,7 @@ Timestamps use DWT cycle counter (sub-microsecond) with NTP-like sync via `rmw_u
 
 ### CAN Bus Layout
 - **FDCAN1**: RES CANopen (Node-ID `0x11`). Receives PDO at `0x191` (e-stop, go-signal, radio quality). Transmits NMT `0x000` and data logger frames `0x500/0x501/0x502`.
-- **FDCAN2**: ACU bus (ECU/VCU + AMS) — the ECU↔uDV contract, matching `IFS08-CE-ECU`'s `.def` files. Receives `0x504` TS-active, `0x505` brake-over-limit verdict, `0x506` motor rpm, `0x511` DV R2D confirm. Transmits `0x507` torque (int32 percent, 20 ms), `0x510` DV R2D request, and `0x512` IMU broadcast (ax/ay/az int16 mg + gx int16 0.1 dps, 50 Hz from imu_task; low arbitration priority by design — telemetry must never outrank the safety frames). RX FIFO0 is routed to interrupt LINE1 (only `FDCAN2_IT1` is NVIC-enabled).
+- **FDCAN2**: ACU bus (ECU/VCU + AMS) — the ECU↔uDV contract, matching `IFS08-CE-ECU`'s `.def` files. Receives `0x504` TS-active, `0x505` brake-over-limit verdict, `0x506` motor rpm, `0x511` DV R2D confirm, and the reboot-to-bootloader trigger `0x002` (`B0 07 AD 13`, AS OFF only). Transmits `0x507` torque (int32 percent, 20 ms), `0x510` DV R2D request, and `0x512` IMU broadcast (ax/ay/az int16 mg + gx int16 0.1 dps, 50 Hz from imu_task; low arbitration priority by design — telemetry must never outrank the safety frames). RX FIFO0 is routed to interrupt LINE1 (only `FDCAN2_IT1` is NVIC-enabled).
 - **FDCAN3**: AMI + steering bus (local DV peripherals). Receives mission select `0x503`, steering sensor `0x2B0`, steering feedback `0x528` and calib status `0x529`. Transmits mission ACK `0x50A`, ASSI `0x100` (local bus only — the ECU→AMS heartbeat also uses 0x100 but on the ACU bus), steering motor `0x520`, angle `0x521` (inspection sweep AND pipeline `/ctrl/cmd` steering — the old consumer-less `0x508` is gone) and calib command `0x522`. The steering block `0x520-0x529` sits deliberately ABOVE the AMI IDs (`0x503`/`0x50A`) so steering always loses arbitration to the AMI (renumbered from `0x010/0x020/0x30/0x500/0x510`, steering fix/6 — both boards must be flashed together).
 
 ISR (`HAL_FDCAN_RxFifo0Callback`) drains all pending frames into the correct queue via `can_isr_push_rx`. The `HAL_FDCAN_ErrorCallback` override re-enables RX notifications after overrun (HAL silently disables them on overrun).
@@ -135,6 +142,8 @@ The STM32 does not drive the WS2812 strip directly (3.3 V-vs-5 V DIN level probl
 `uDV.ioc` is the CubeMX project file. CubeMX generates peripheral init code into `Core/Src/` and `Core/Inc/`. **Only edit code inside `/* USER CODE BEGIN/END */` blocks** to survive regeneration. USART10 (ASSI Arduino bridge, PG11 RX / PG12 TX, AF11) is a fully CubeMX-managed peripheral: enabled in `uDV.ioc`, with `MX_USART10_UART_Init`/`HAL_UART_MspInit` generated into [Core/Src/usart.c](Core/Src/usart.c). It must stay in the `.ioc` — if it is removed there, regeneration drops `HAL_UART_MODULE_ENABLED` from `stm32h7xx_hal_conf.h` and the build breaks. (SPI1 was fully removed with the old direct WS2812 driver.) **The clock tree in `uDV.ioc` is 528 MHz (VOS0, PLLN=44, HPRE=DIV2)** — do not import a different team `.ioc`'s clock config without regenerating `tim.c`/`fdcan.c`/`i2c.c`/`adc.c` consistently; TIM2's 400 Hz tick and the FDCAN bit timing depend on it.
 
 ⚠️ **FDCAN message-RAM offsets (`Core/Src/fdcan.c`) MUST be re-applied after any CubeMX regen.** The three FDCANs share one STM32H7 message RAM; CubeMX has no `.ioc` field for `MessageRAMOffset` and regenerates all three to `0`, which overlaps their filters/FIFOs. With all at 0, starting FDCAN2 (`Can::initEcu()`) clobbers **FDCAN1's RX FIFO0** → FDCAN1 ACKs but receives **zero** frames → the uDV goes **RES-deaf** (no `0x191` GO/e-stop). Required non-overlapping values: **FDCAN1 = 0, FDCAN2 = 640, FDCAN3 = 1280** (words; each ≫ its ~387-word footprint, max end 1668 < 2560). After every regen, verify these are set or the RES silently stops the moment the ECU/AMS bus (FDCAN2) runs.
+
+⚠️ **Bootloader layout after a regen.** `uDV.ioc` carries the app's FLASH region (`MMTAppReg6`: `0x08020000`, 768 KB) and FDCAN2's three standard filters (0x504–0x511, 0x7DE/0x7DF, 0x002). If CubeMX regenerates `STM32H733XG_FLASH.ld`, re-add the `.firmware_info` section at `0x08020400`; `scripts/check_flash_layout.py` fails the build without it.
 
 ## Key Constraints
 

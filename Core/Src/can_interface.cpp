@@ -3,6 +3,7 @@
 #include "hardware_io.h"   /* hardware_io_now_ms — the 0x504 TS stamp clock */
 #include "bench_stubs.h"   /* BENCH_STUB_RES (all 0 on dev) */
 #include "pit_diag.h"      /* CAN_ID_PITDIAG_ARM + pit_diag_arm_from_can */
+#include "bl_entry.h"      /* 0x002 reboot-to-bootloader trigger */
 #include <cstring>
 #include "main.h"
 #include "stm32h7xx_hal.h"
@@ -191,6 +192,22 @@ void initEcu()
         .FilterID2    = CAN_ID_PITDIAG_CALIB_TRIGGER,  /* 0x7DF */
     };
     if (HAL_FDCAN_ConfigFilter(&hfdcan2, &arm_filter) != HAL_OK) {
+        Error_Handler();
+    }
+
+    /* Third filter: the reboot-to-bootloader trigger 0x002 (bl_entry.h) ->
+     * FIFO0 (StdFiltersNbr is 3). The uDV is flashed over this bus (node 0x3);
+     * can-flasher sends 0x002 with the uDV's payload to get a running app back
+     * into the bootloader. */
+    FDCAN_FilterTypeDef bl_filter = {
+        .IdType       = FDCAN_STANDARD_ID,
+        .FilterIndex  = 2,
+        .FilterType   = FDCAN_FILTER_DUAL,
+        .FilterConfig = FDCAN_FILTER_TO_RXFIFO0,
+        .FilterID1    = BL_ENTRY_CAN_ID,      /* 0x002 */
+        .FilterID2    = BL_ENTRY_CAN_ID,
+    };
+    if (HAL_FDCAN_ConfigFilter(&hfdcan2, &bl_filter) != HAL_OK) {
         Error_Handler();
     }
 
@@ -438,6 +455,17 @@ void rx_dispatch(const can_msg_t *msg)    //CAN FDCAN3
     case CAN_ID_R2D_CONFIRM:             /* 0x511 — ECU latched DV R2D */
         if (msg->dlc >= 1U) {
             g_can_r2d.store(msg->data[0] != 0U);
+        }
+        break;
+
+    case BL_ENTRY_CAN_ID:                /* 0x002 — reboot into the CAN bootloader */
+        /* Only this node's payload on the ACU bus (FDCAN3 accepts every id, so
+         * the bus check matters), and only in AS OFF (bl_entry.h: a reset fires
+         * the EBS and opens the SDC). A refused trigger is dropped silently;
+         * the flasher reports a CONNECT timeout. Never returns when honoured. */
+        if (bl_entry_is_trigger(msg->bus, msg->id, msg->dlc, msg->data) &&
+            bl_entry_allowed(ros_get_as_state())) {
+            bl_entry_reboot_to_bootloader();
         }
         break;
 

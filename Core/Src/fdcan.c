@@ -102,7 +102,7 @@ void MX_FDCAN2_Init(void)
   hfdcan2.Init.DataTimeSeg1 = 1;
   hfdcan2.Init.DataTimeSeg2 = 1;
   hfdcan2.Init.MessageRAMOffset = 640;   /* non-overlapping slot (was 0 = overlapped FDCAN1 RX FIFO -> RES-deaf) */
-  hfdcan2.Init.StdFiltersNbr = 2;
+  hfdcan2.Init.StdFiltersNbr = 3;
   hfdcan2.Init.ExtFiltersNbr = 1;
   hfdcan2.Init.RxFifo0ElmtsNbr = 16;
   hfdcan2.Init.RxFifo0ElmtSize = FDCAN_DATA_BYTES_8;

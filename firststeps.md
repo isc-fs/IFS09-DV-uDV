@@ -48,8 +48,8 @@ make GCC_PATH=/path/to/arm-none-eabi/bin -j
 Outputs land in `build/binaries/`:
 
 - `uDV.elf` — debug-friendly format (use with `gdb`, `arm-none-eabi-size`)
-- `uDV.bin` — raw binary for ST-Link / DFU
-- `uDV.hex` — Intel HEX for STM32CubeProgrammer
+- `uDV.bin` — raw binary, starts at `0x08020000` (no address inside)
+- `uDV.hex` — Intel HEX for STM32CubeProgrammer (carries its addresses)
 
 > **HIL bench note:** per the team's flashing convention, use
 > STM32CubeProgrammer for ST-Link flashing.  Do **not** use MingoCAN
@@ -57,9 +57,20 @@ Outputs land in `build/binaries/`:
 
 ## 3. Flash and run
 
-Flash `build/binaries/uDV.bin` (ST-Link) or `uDV.hex`
-(STM32CubeProgrammer / DFU) to the STM32H733XG, then start the
-micro-ROS agent on the host PC:
+The uDV app runs behind the CAN bootloader
+([isc-fs/stm32-can-bootloader](https://github.com/isc-fs/stm32-can-bootloader))
+that every MainLite carries in flash sector 0: it is linked at `0x08020000`
+and the bootloader jumps to it. Flash it over CAN with `can-flasher` (`cf`),
+node **0x3**, on the ACU bus (FDCAN2), 500 kbit/s:
+
+```bash
+cf --bitrate 500000 --node-id 0x3 flash build/binaries/uDV.elf
+```
+
+A running uDV reboots into the bootloader on `0x002` `B0 07 AD 13` (AS OFF
+only, see [bl_entry.h](Core/Inc/bl_entry.h)). Over SWD, write the `.elf` or
+`.hex`, never the `.bin` at the programmer's default `0x08000000`: that
+overwrites the bootloader. Then start the micro-ROS agent on the host PC:
 
 ```bash
 ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyACM0

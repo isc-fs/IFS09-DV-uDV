@@ -66,7 +66,14 @@ RAM_D1 (xrw)      : ORIGIN = 0x24000000, LENGTH = 320K
 RAM_D2 (xrw)      : ORIGIN = 0x30000000, LENGTH = 32K
 RAM_D3 (xrw)      : ORIGIN = 0x38000000, LENGTH = 16K
 ITCMRAM (xrw)      : ORIGIN = 0x00000000, LENGTH = 64K
-FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 1024K
+/* The app runs behind isc-fs/stm32-can-bootloader (every MainLite carries it).
+ * Sector 0 (0x08000000..0x0801FFFF) is the bootloader, sector 7
+ * (0x080E0000..0x080FFFFF) its NVM, provisioning seed and the app-metadata
+ * FLASHWORD at 0x080FFFE0. The app owns sectors 1..6: 768 KB from 0x08020000
+ * (bootloader ARCHITECTURE.md "Flash memory map", Core/Inc/bl_memmap.h).
+ * Mirrored in uDV.ioc (MMTAppReg6, the FLASH region) so a CubeMX regen keeps
+ * it; scripts/check_flash_layout.py gates it in CI. */
+FLASH (rx)      : ORIGIN = 0x08020000, LENGTH = 768K
 }
 
 /* Define output sections */
@@ -78,6 +85,17 @@ SECTIONS
     . = ALIGN(4);
     KEEP(*(.isr_vector)) /* Startup code */
     . = ALIGN(4);
+  } >FLASH
+
+  /* Bootloader firmware-info record, pinned at the app base + 0x400
+   * (= 0x08020400), clear of the 0x2CC-byte vector table. The bootloader
+   * reads it by fixed address for GET_FW_INFO (bl_fwinfo.h); the record is
+   * emitted by Core/Src/firmware_info.c. A CubeMX regen does not know this
+   * section: re-add it if the regenerated script drops it (the flash-layout
+   * check fails without it). */
+  .firmware_info 0x08020400 :
+  {
+    KEEP(*(.firmware_info))
   } >FLASH
 
   /* The program code and other data goes into FLASH */
