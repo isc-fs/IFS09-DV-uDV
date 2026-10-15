@@ -71,6 +71,7 @@ All tasks and queues are **created** in [Core/Src/freertos.c](Core/Src/freertos.
 | `assiTask` | BelowNormal | 2 KB | ASSI LED renderer: AS mode → UART commands to the Arduino bridge | [assi_task.c](Core/Src/assi_task.c) |
 | `safetyTask` | High | 2 KB | Two-tier watchdog / IWDG refresh | [safety_monitor.c](Core/Src/safety_monitor.c) |
 | `appTask` | Normal | 4 KB | AS state machine + EBS init sequence + mission dispatch | [app_task.cpp](Core/Src/app_task.cpp) |
+| Idle (FreeRTOS) | lowest | — | Runs when nothing is ready: `vApplicationIdleHook` sleeps the core with `__DSB(); __WFI();` until the next interrupt instead of spinning. Sleep, not Stop (`LL_LPM_EnableSleep()` in `main.c` USER CODE Init), so FDCAN, TIM1/TIM2, USB and the IWDG keep running; `DBG_SLEEPD1` (`HAL_DBGMCU_EnableDBGSleepMode()`) keeps a debugger attached and the CYCCNT clock behind `dwt_micros()` running. Enabled in `uDV.ioc` (`FREERTOS.configUSE_IDLE_HOOK`) so a regen keeps it; a `_Static_assert` next to the hook fails the build if it is lost. No tickless idle. | [freertos.c](Core/Src/freertos.c) (USER CODE 2) |
 
 The shared microsecond timestamp `dwt_micros()` (used by both the IMU and ROS tasks) lives in [dwt_time.c](Core/Src/dwt_time.c).
 
