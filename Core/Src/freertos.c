@@ -125,6 +125,38 @@ void StartDefaultTask(void *argument);
 extern void MX_USB_DEVICE_Init(void);
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
+/* Hook prototypes */
+void vApplicationIdleHook(void);
+
+/* USER CODE BEGIN 2 */
+/* The hook body below lives in a CubeMX USER CODE block, so it survives a
+ * regen even if uDV.ioc loses FREERTOS.configUSE_IDLE_HOOK -- and would then
+ * silently never be called, putting the idle task back to spinning. Fail the
+ * build instead. */
+_Static_assert(configUSE_IDLE_HOOK == 1,
+               "configUSE_IDLE_HOOK must be 1 (uDV.ioc FREERTOS.configUSE_IDLE_HOOK): "
+               "vApplicationIdleHook sleeps the core with WFI");
+
+void vApplicationIdleHook( void )
+{
+  /* Sleep until the next interrupt instead of spinning. The idle task only
+   * runs when no task is ready, and every source that can ready one -- the
+   * 1 kHz FreeRTOS tick (SysTick), the TIM1 HAL timebase, TIM2's 400 Hz IMU
+   * tick, FDCAN1/FDCAN2/FDCAN3 RX and the USB OTG_HS (micro-ROS CDC)
+   * interrupt -- is an interrupt that wakes the core within a few cycles, so
+   * task timing is unchanged. The ADCs, I2C2 and USART10 are polled from
+   * tasks and never need to wake it. Sleep (SLEEPDEEP clear, forced by
+   * LL_LPM_EnableSleep in main.c) gates only the CPU clock: peripherals,
+   * buses and the IWDG keep running. DBG_SLEEPD1 (main.c) keeps the clock
+   * that drives DWT->CYCCNT, the IMU timestamp base (dwt_time.c), running in
+   * Sleep. The DSB lets outstanding memory accesses complete before the
+   * core stops. This hook must return and must never block: the idle task
+   * also frees deleted tasks. */
+  __DSB();
+  __WFI();
+}
+/* USER CODE END 2 */
+
 /**
   * @brief  FreeRTOS initialization
   * @param  None

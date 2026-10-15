@@ -31,6 +31,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "safety_monitor.h"
+#include "stm32h7xx_ll_cortex.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -102,6 +103,21 @@ int main(void)
     uint8_t *p = &_sram_d1_bss;
     while (p < &_eram_d1_bss) *p++ = 0;
   }
+
+  /* The idle hook sleeps the core with WFI (freertos.c). Make sure that WFI
+   * means Sleep -- CPU clock gated, peripherals and buses running -- and
+   * never Stop, which would stop the FDCAN, TIM2 and USB clocks, whatever
+   * SLEEPDEEP was left at before the app started. (USB's suspend callback
+   * would set SLEEPDEEP only with low_power_enable, which is DISABLE in
+   * usbd_conf.c.) DBG_SLEEPD1 disables the automatic clock stop in Sleep
+   * (RM0468 DBGMCU_CR): an attached debugger does not drop the connection,
+   * and the core clock that drives DWT->CYCCNT keeps running, so the IMU
+   * timestamps (dwt_time.c) keep counting real time while the core sleeps.
+   * Keep it set while dwt_micros() is the time base. Deliberately in every
+   * build, matching the AMS and the ECU: the image the car runs is the one
+   * worth attaching to. */
+  LL_LPM_EnableSleep();
+  HAL_DBGMCU_EnableDBGSleepMode();
   /* USER CODE END Init */
 
   /* Configure the system clock */
