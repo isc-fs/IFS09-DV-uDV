@@ -57,6 +57,13 @@ jobs:
       - name: Print firmware size
         run: arm-none-eabi-size build/binaries/uDV.elf
 
+      - name: Check flash layout (CAN bootloader)
+        # The app runs behind isc-fs/stm32-can-bootloader: .isr_vector exactly
+        # at 0x08020000, .firmware_info at 0x08020400, nothing in sector 0 (the
+        # bootloader) or sector 7 (its NVM + app metadata). Mandatory: a
+        # mis-linked image would overwrite the bootloader or fault on the jump.
+        run: python3 scripts/check_flash_layout.py build/binaries/uDV.elf
+
       - name: Upload firmware artifacts
         # Only upload from the Linux runner to avoid artifact name collisions
         # and because the elf/bin/hex are byte-identical across host OSes.
@@ -123,3 +130,10 @@ jobs:
 
       - name: Print firmware size
         run: arm-none-eabi-size build/binaries/uDV.elf
+
+      - name: Check flash layout (CAN bootloader)
+        # The app runs behind isc-fs/stm32-can-bootloader: .isr_vector exactly
+        # at 0x08020000, .firmware_info at 0x08020400, nothing in sector 0 (the
+        # bootloader) or sector 7 (its NVM + app metadata). Mandatory: a
+        # mis-linked image would overwrite the bootloader or fault on the jump.
+        run: python3 scripts/check_flash_layout.py build/binaries/uDV.elf

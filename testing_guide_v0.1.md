@@ -14,7 +14,8 @@ Quick guide to verify the 4 communication interfaces implemented in `feat/7-rele
 
 ```bash
 make GCC_PATH=/Applications/ArmGNUToolchain/14.3.rel1/arm-none-eabi/bin -j8
-# Flash build/binaries/uDV.bin via ST-Link or DFU
+# Flash over CAN behind the bootloader (node 0x3, FDCAN2): see firststeps.md §3
+cf --bitrate 500000 --node-id 0x3 flash build/binaries/uDV.elf
 ```
 
 ## Startup Sequence

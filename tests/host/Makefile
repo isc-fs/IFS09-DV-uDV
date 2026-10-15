@@ -19,6 +19,8 @@
 #                           sweep/cadence/self-finish, pipeline relay, ebs stub)
 #   test_attitude         — complementary-filter roll/pitch (attitude.c) [ex-dev]
 #   test_bmi088_convert   — BMI088 raw->scaled + bind validation (bmi088.c) [ex-dev]
+#   test_bl_entry         — 0x002 reboot-to-bootloader trigger + AS-OFF gate
+#                           (bl_entry.h, header-only)
 
 CORE_INC := ../../Core/Inc
 CORE_SRC := ../../Core/Src
@@ -53,7 +55,7 @@ SENS_CFLAGS := -std=c11 -I$(MOCKS) -I$(CORE_INC) -Wall -Wextra -g -O0
 
 BINS := test_safety_eval test_state_machine test_rules_compliance \
         test_as_transition test_as_actuation test_as_stop_latch test_missions \
-        test_attitude test_bmi088_convert
+        test_attitude test_bmi088_convert test_bl_entry
 
 # Mission suite — pure mission bodies + registry, no HAL/RTOS/CAN. Strict flags
 # (-Werror): new dependency-free code, held to the same bar as safety_eval.
@@ -113,6 +115,10 @@ test_bmi088_convert: test_bmi088_convert.c $(CORE_SRC)/bmi088.c mocks/hal_stubs.
 	$(CC) $(SENS_CFLAGS) -o $@ test_bmi088_convert.c $(CORE_SRC)/bmi088.c \
 	      mocks/hal_stubs.c mocks/i2c_utils_stubs.c -lm
 
+# ---- suite 7: reboot-to-bootloader trigger (header-only bl_entry.h) -----
+test_bl_entry: test_bl_entry.cpp $(CORE_INC)/bl_entry.h
+	$(CXX) $(CXXFLAGS) -o $@ test_bl_entry.cpp
+
 test: $(BINS)
 	@echo "=== build_integrity ===";       sh ./check_build_integrity.sh
 	@echo "=== test_safety_eval ===";      ./test_safety_eval
@@ -124,6 +130,7 @@ test: $(BINS)
 	@echo "=== test_missions ===";         ./test_missions
 	@echo "=== test_attitude ===";         ./test_attitude
 	@echo "=== test_bmi088_convert ===";   ./test_bmi088_convert
+	@echo "=== test_bl_entry ===";         ./test_bl_entry
 
 clean:
 	rm -rf $(BINS) *.o *.dSYM

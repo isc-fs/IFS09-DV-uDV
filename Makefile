@@ -51,6 +51,8 @@ Core/Src/imu_task.c \
 Core/Src/ws2812.c \
 Core/Src/assi_task.c \
 Core/Src/dwt_time.c \
+Core/Src/bl_entry.c \
+Core/Src/firmware_info.c \
 Core/Src/comunicacion_direccion.c \
 Core/Src/attitude.c \
 Core/Src/stm32h7xx_it.c \
