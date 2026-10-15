@@ -10,9 +10,12 @@
  *
  * The trigger is one classic frame on the ACU bus (FDCAN2), the bus the uDV is
  * flashed over (node 0x3): id 0x002, dlc 4, payload B0 07 AD 13. The id is the
- * one the AMS (payload ..AD 11, node 0x2) and the ECU (..AD 12, node 0x1)
- * listen on; the last byte selects the board, so one frame reboots one node
- * on the shared bus (can-flasher src/app_control.rs).
+ * one the ECU (node 0x1, payload B0 07 AD 12, ecu_config.hpp:658) and the AMS
+ * (node 0x2, payload B0 07 AD 11, ams_config.hpp:1057) listen on; the last
+ * byte selects the board, so one frame reboots one node on the shared bus
+ * (can-flasher src/app_control.rs). That byte is a per-board constant, not
+ * derived from the node id: 0x10 | node holds for the uDV only (ECU 0x1 ->
+ * 0x12, AMS 0x2 -> 0x11).
  *
  * Gate: honoured only in AS OFF. Resetting the uDV drops it into the
  * bootloader, whose pins sit at their power-on level: EBS fires and the SDC
@@ -49,6 +52,8 @@ extern "C" {
 #define BL_ENTRY_PAYLOAD_0       0xB0u
 #define BL_ENTRY_PAYLOAD_1       0x07u
 #define BL_ENTRY_PAYLOAD_2       0xADu
+/* 0x13: the uDV's own byte. 0x10 | node happens to give it, but it is no
+ * cross-board rule (ECU node 0x1 uses 0x12, AMS node 0x2 uses 0x11). */
 #define BL_ENTRY_PAYLOAD_3       (0x10u | BL_ENTRY_NODE_ID)   /* 0x13 */
 
 /* Raw AS state values (as_state.h): OFF=0. */
